@@ -1,112 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "./supabase";
 
 const RUNNER_SRC = `${import.meta.env.BASE_URL}runner.png`;
 
-const initialData = `1	대리 신진휴	609422	338675	270747
-2	차장 이규범	560670	333075	227595
-3	변리사 정의환	636050	328777	307273
-4	차장 한은영	508414	299476	208938
-5	변리사 백지석	621115	268869	352246
-6	대리 윤정원	625223	259713	365510
-7	사원 오준성	459248	255706	203542
-8	사원 임예솔	510364	242040	268324
-9	변리사 유재춘	313810	227298	86512
-10	차장 정선미	395367	208542	186825
-11	부장 김승규	305880	206243	99637
-12	변리사 송해모	457757	206116	251641
-13	변리사 이주원	388808	206004	182804
-14	부장 장진영	401093	204032	197061
-15	대리 김지수	331081	202284	128797
-16	차장 황지현	374635	200421	174214
-17	변리사 윤수인	400959	200356	200603
-18	부장 장혁재	377229	197979	179250
-19	변리사 이석빈	381733	195670	186063
-20	부장 김수철	511580	192978	318602
-21	변리사 박가연	382218	187404	194814
-22	과장 조미옥	626485	181483	445002
-23	대리 이윤서	388276	176886	211390
-24	변리사 이유진	400000	170733	229267
-25	부장 임현진	331163	166159	165004
-26	대리 임중혁	463547	164354	299193
-27	차장 이민영	406697	162351	244346
-28	대리 이주혜	424623	155387	269236
-29	사원 김채희	514405	153707	360698
-30	책임 형승우	456865	151219	305646
-31	변리사 이초은	276078	151133	124945
-32	상무 손태식	505679	150017	355662
-33	차장 김복기	251140	149169	101971
-34	사원 배준영	271654	147122	124532
-35	변리사 서예은	400000	146380	253620
-36	사원 최정하	405021	146305	258716
-37	대리 김희정	504027	142701	361326
-38	대리 함소희	302121	142019	160102
-39	과장 이영주	685382	141325	544057
-40	차장 김형태	252719	138774	113945
-41	변리사 윤명백	400000	134115	265885
-42	차장 박선정	430741	130688	300053
-43	사원 이유진	249609	128388	121221
-44	변리사 김석래	455971	128004	327967
-45	변리사 조형우	357482	127138	230344
-46	변리사 김형기	470934	125886	345048
-47	변리사 송요한	455100	123033	332067
-48	차장 이데레사	298474	115195	183279
-49	대리 정재욱	548633	114273	434360
-50	부장 정석현	312330	103875	208455
-51	과장 이지혜	364234	101701	262533
-52	사원 김진영	295686	101418	194268
-53	변리사 정의성	335164	100925	234239
-54	변리사 김은구	463425	92585	370840
-55	변리사 이정훈	211679	92194	119485
-56	사원 이시원	39424	61497	-22073
-57	사원 황성빈	90020	50318	39702`;
-
-const runnerColors = [
-  "#6c5ce7", "#5f7cff", "#2ec4b6", "#7b61ff", "#4dabf7",
-  "#51cf66", "#9775fa", "#22b8cf", "#845ef7", "#69db7c"
-];
-
-function parseTextToRunners(text) {
-  const rows = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  return rows
-    .map((row, index) => {
-      const parts = row.split(/\t|,/).map((v) => v.trim());
-      const rank = Number(parts[0]);
-      const name = parts[1];
-      const goalSteps = Number(parts[2]);
-      const currentSteps = Number(parts[3]);
-
-      if (
-        Number.isNaN(rank) ||
-        !name ||
-        Number.isNaN(goalSteps) ||
-        Number.isNaN(currentSteps)
-      ) {
-        return null;
-      }
-
-      return {
-        id: index + 1,
-        rank,
-        name,
-        goalSteps,
-        currentSteps,
-        color: runnerColors[index % runnerColors.length],
-      };
-    })
-    .filter(Boolean);
-}
-
 function getRemainingSteps(runner) {
-  return runner.goalSteps - runner.currentSteps;
+  return runner.goal_steps - runner.current_steps;
 }
 
 function getCompletionRate(runner) {
-  if (!runner.goalSteps) return 0;
-  return (runner.currentSteps / runner.goalSteps) * 100;
+  if (!runner.goal_steps) return 0;
+  return (runner.current_steps / runner.goal_steps) * 100;
 }
 
 function formatRemaining(value) {
@@ -114,39 +17,123 @@ function formatRemaining(value) {
   return `초과 ${Math.abs(value).toLocaleString()}보`;
 }
 
-function sortByRank(runners) {
-  return [...runners].sort((a, b) => a.rank - b.rank);
+function sortByCurrentSteps(runners) {
+  return [...runners].sort((a, b) => {
+    if (b.current_steps !== a.current_steps) {
+      return b.current_steps - a.current_steps;
+    }
+    return a.id - b.id;
+  });
 }
 
 export default function App() {
   const [search, setSearch] = useState("");
-  const [csvInput, setCsvInput] = useState(initialData);
-  const [runners, setRunners] = useState(parseTextToRunners(initialData));
+  const [runners, setRunners] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adminMode, setAdminMode] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const sorted = useMemo(() => sortByRank(runners), [runners]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setAdminMode(params.get("admin") === "1");
+  }, []);
+
+  useEffect(() => {
+    fetchParticipants();
+
+    const channel = supabase
+      .channel("participants-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "participants" },
+        () => {
+          fetchParticipants();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  async function fetchParticipants() {
+    setLoading(true);
+    setErrorMessage("");
+
+    const { data, error } = await supabase
+      .from("participants")
+      .select("*")
+      .order("current_steps", { ascending: false });
+
+    console.log("불러온 데이터:", data, error);
+
+    if (error) {
+      console.error("데이터 조회 오류:", error);
+      setErrorMessage("Supabase 데이터를 불러오는 중 오류가 발생했습니다.");
+      setRunners([]);
+    } else {
+      setRunners(data || []);
+    }
+
+    setLoading(false);
+  }
+
+  async function updateRunner(id, goalSteps, currentSteps) {
+    const { error } = await supabase
+      .from("participants")
+      .update({
+        goal_steps: Number(goalSteps) || 0,
+        current_steps: Number(currentSteps) || 0,
+      })
+      .eq("id", id);
+
+    if (error) {
+      console.error("업데이트 오류:", error);
+      alert("수정 중 오류가 발생했습니다.");
+    }
+  }
+
+  const sorted = useMemo(() => sortByCurrentSteps(runners), [runners]);
   const leader = sorted[0];
 
-  const totalCurrentSteps = sorted.reduce((sum, runner) => sum + runner.currentSteps, 0);
-  const totalRemainingSteps = sorted.reduce((sum, runner) => sum + getRemainingSteps(runner), 0);
+  const totalCurrentSteps = sorted.reduce(
+    (sum, runner) => sum + runner.current_steps,
+    0
+  );
+  const totalRemainingSteps = sorted.reduce(
+    (sum, runner) => sum + getRemainingSteps(runner),
+    0
+  );
   const averageCompletion =
     sorted.length > 0
-      ? sorted.reduce((sum, runner) => sum + getCompletionRate(runner), 0) / sorted.length
+      ? sorted.reduce((sum, runner) => sum + getCompletionRate(runner), 0) /
+        sorted.length
       : 0;
 
   const filtered = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     if (!keyword) return sorted;
-    return sorted.filter((runner) => runner.name.toLowerCase().includes(keyword));
+    return sorted.filter((runner) =>
+      runner.name.toLowerCase().includes(keyword)
+    );
   }, [search, sorted]);
 
-  const applyCsv = () => {
-    const parsed = parseTextToRunners(csvInput);
-    if (parsed.length > 0) {
-      setRunners(parsed);
-    } else {
-      alert("입력 형식을 다시 확인해 주세요. 예: 1,홍길동,500000,231000");
-    }
-  };
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          padding: 40,
+          background: "linear-gradient(180deg, #f6efe4 0%, #eee1cc 50%, #e5d6bf 100%)",
+          fontFamily: 'Arial, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif',
+          color: "#1f2937",
+        }}
+      >
+        데이터를 불러오는 중입니다.
+      </div>
+    );
+  }
 
   return (
     <>
@@ -185,6 +172,28 @@ export default function App() {
           color: #6b7280;
           font-size: 17px;
           line-height: 1.7;
+        }
+        .adminBanner {
+          margin-top: 14px;
+          background: #fff7ed;
+          color: #9a3412;
+          border: 1px solid #fdba74;
+          padding: 12px 16px;
+          border-radius: 14px;
+          font-size: 14px;
+          text-align: center;
+          font-weight: 700;
+        }
+        .errorBanner {
+          margin-top: 14px;
+          background: #fef2f2;
+          color: #b91c1c;
+          border: 1px solid #fca5a5;
+          padding: 12px 16px;
+          border-radius: 14px;
+          font-size: 14px;
+          text-align: center;
+          font-weight: 700;
         }
         .layout {
           display: grid;
@@ -322,40 +331,15 @@ export default function App() {
           50% { transform: translateY(-4px); }
           100% { transform: translateY(0); }
         }
-        .bottomGrid {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 16px;
+        .rankingSearch {
+          margin-bottom: 12px;
         }
-        .innerCard {
-          background: white;
-          border-radius: 22px;
-          padding: 18px;
-          border: 1px solid #eef2f7;
-        }
-        .sectionTitle {
-          font-size: 18px;
-          font-weight: 900;
-          margin: 0 0 12px 0;
-        }
-        textarea, input {
+        input {
           width: 100%;
           border: 1px solid #d1d5db;
           border-radius: 14px;
           padding: 12px;
           font-size: 14px;
-        }
-        textarea {
-          min-height: 220px;
-          resize: vertical;
-        }
-        .smallText {
-          font-size: 13px;
-          color: #6b7280;
-          line-height: 1.7;
-        }
-        .rankingSearch {
-          margin-bottom: 12px;
         }
         .rankingList {
           max-height: 1180px;
@@ -395,6 +379,7 @@ export default function App() {
           justify-content: center;
           font-weight: 900;
           flex-shrink: 0;
+          background: #6366f1;
         }
         .rankName {
           font-weight: 900;
@@ -439,6 +424,47 @@ export default function App() {
           font-size: 17px;
           font-weight: 900;
         }
+        .adminPanel {
+          margin-top: 18px;
+          background: #ffffff;
+          border: 1px solid #e5e7eb;
+          border-radius: 22px;
+          padding: 18px;
+        }
+        .adminTitle {
+          margin-top: 0;
+          margin-bottom: 12px;
+          font-size: 20px;
+          font-weight: 900;
+        }
+        .adminGrid {
+          display: grid;
+          gap: 10px;
+          max-height: 520px;
+          overflow: auto;
+        }
+        .adminRow {
+          display: grid;
+          grid-template-columns: 70px 1fr 140px 140px 90px;
+          gap: 8px;
+          align-items: center;
+        }
+        .adminCell {
+          background: #f8fafc;
+          border-radius: 12px;
+          padding: 10px 12px;
+          font-size: 14px;
+          font-weight: 700;
+        }
+        .saveBtn {
+          border: 0;
+          border-radius: 12px;
+          padding: 10px 12px;
+          background: #4f46e5;
+          color: white;
+          font-weight: 700;
+          cursor: pointer;
+        }
 
         @media (max-width: 1200px) {
           .layout {
@@ -482,6 +508,9 @@ export default function App() {
           .leaderTag {
             bottom: 98px;
           }
+          .adminRow {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
 
@@ -490,9 +519,21 @@ export default function App() {
           <div className="header">
             <h1 className="title">유일하이스트 시즌8 챌린지</h1>
             <p className="subtitle">
-              총 57명이 참여 중인 챌린지입니다. 현재 걸음 수 기준 순위를 반영하여,
-              각 참여자의 목표 걸음 수, 현재 걸음 수, 남은 걸음 수 및 달성률을 한눈에 확인하실 수 있도록 구성하였습니다.
+              총 {sorted.length}명이 참여 중인 챌린지입니다. 현재 걸음 수 기준으로 순위가 자동 반영되며,
+              각 참여자의 목표 걸음 수, 현재 걸음 수, 남은 걸음 수 및 달성률을 한눈에 확인하실 수 있습니다.
             </p>
+
+            {adminMode && (
+              <div className="adminBanner">
+                관리자 수정 모드입니다. 현재 걸음 수를 수정하면 순위와 이름 위치가 자동으로 다시 정렬됩니다.
+              </div>
+            )}
+
+            {errorMessage && (
+              <div className="errorBanner">
+                {errorMessage}
+              </div>
+            )}
           </div>
 
           <div className="layout">
@@ -524,9 +565,7 @@ export default function App() {
 
                 <div className="trackWrap">
                   <div className="trackHeader">
-                    <div>
-                      <div className="trackTitle">실시간 레이스 트랙</div>
-                    </div>
+                    <div className="trackTitle">실시간 레이스 트랙</div>
                     <div className="trackBadge">
                       총 남은 걸음 수 {totalRemainingSteps.toLocaleString()}보
                     </div>
@@ -542,12 +581,12 @@ export default function App() {
                           <div className="runner" style={{ left: `${progress}%` }}>
                             {index === 0 && <div className="leaderTag">1위</div>}
                             <div className="runnerLabel">
-                              {runner.rank}위 · {runner.name} · {completion.toFixed(1)}%
+                              {index + 1}위 · {runner.name} · {completion.toFixed(1)}%
                             </div>
 
                             <div
                               className="runnerSpriteWrap"
-                              title={`${runner.name} / 현재 ${runner.currentSteps.toLocaleString()}보 / 남은 ${formatRemaining(getRemainingSteps(runner))}`}
+                              title={`${runner.name} / 현재 ${runner.current_steps.toLocaleString()}보 / 남은 ${formatRemaining(getRemainingSteps(runner))}`}
                             >
                               <img
                                 className="runnerSprite"
@@ -563,27 +602,26 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bottomGrid">
-                  <div className="innerCard">
-                    <h3 className="sectionTitle">데이터 붙여넣기</h3>
-                    <p className="smallText">
-                      아래 입력창에는 <strong>순위, 이름, 목표걸음수, 현재걸음수</strong> 형식으로 입력해 주세요.
-                      엑셀에서 복사한 내용도 그대로 붙여넣으실 수 있습니다.
-                    </p>
-                    <textarea
-                      value={csvInput}
-                      onChange={(e) => setCsvInput(e.target.value)}
-                    />
-                    <div style={{ marginTop: 12 }}>
-                      <button onClick={applyCsv}>데이터 반영하기</button>
+                {adminMode && (
+                  <div className="adminPanel">
+                    <h3 className="adminTitle">관리자 수정</h3>
+                    <div className="adminGrid">
+                      {sorted.map((runner, index) => (
+                        <AdminRow
+                          key={runner.id}
+                          runner={runner}
+                          index={index}
+                          onSave={updateRunner}
+                        />
+                      ))}
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
             <div className="card">
-              <h3 className="sectionTitle">실시간 순위</h3>
+              <h3 style={{ marginTop: 0 }}>실시간 순위</h3>
 
               <div className="rankingSearch">
                 <input
@@ -598,7 +636,7 @@ export default function App() {
                 {filtered.map((runner, index) => {
                   const remaining = getRemainingSteps(runner);
                   const completion = getCompletionRate(runner);
-                  const gap = leader ? leader.currentSteps - runner.currentSteps : 0;
+                  const gap = leader ? leader.current_steps - runner.current_steps : 0;
 
                   return (
                     <div
@@ -607,16 +645,11 @@ export default function App() {
                     >
                       <div className="rankTop">
                         <div className="rankLeft">
-                          <div
-                            className="rankNo"
-                            style={{ background: runner.color }}
-                          >
-                            {runner.rank}
-                          </div>
+                          <div className="rankNo">{index + 1}</div>
                           <div>
                             <div className="rankName">{runner.name}</div>
                             <div className="rankGap">
-                              {runner.rank === 1 ? "현재 선두" : `1위와 ${gap.toLocaleString()}보 차이`}
+                              {index === 0 ? "현재 선두" : `1위와 ${gap.toLocaleString()}보 차이`}
                             </div>
                           </div>
                         </div>
@@ -630,11 +663,11 @@ export default function App() {
                       <div className="infoGrid">
                         <div className="infoBox">
                           <div className="infoLabel">목표 걸음 수</div>
-                          <div className="infoValue">{runner.goalSteps.toLocaleString()}보</div>
+                          <div className="infoValue">{runner.goal_steps.toLocaleString()}보</div>
                         </div>
                         <div className="infoBox">
                           <div className="infoLabel">현재 걸음 수</div>
-                          <div className="infoValue">{runner.currentSteps.toLocaleString()}보</div>
+                          <div className="infoValue">{runner.current_steps.toLocaleString()}보</div>
                         </div>
                         <div className="infoBox">
                           <div className="infoLabel">남은 걸음 수</div>
@@ -650,5 +683,38 @@ export default function App() {
         </div>
       </div>
     </>
+  );
+}
+
+function AdminRow({ runner, index, onSave }) {
+  const [goalSteps, setGoalSteps] = useState(runner.goal_steps);
+  const [currentSteps, setCurrentSteps] = useState(runner.current_steps);
+
+  useEffect(() => {
+    setGoalSteps(runner.goal_steps);
+    setCurrentSteps(runner.current_steps);
+  }, [runner.goal_steps, runner.current_steps]);
+
+  return (
+    <div className="adminRow">
+      <div className="adminCell">{index + 1}위</div>
+      <div className="adminCell">{runner.name}</div>
+      <input
+        type="number"
+        value={goalSteps}
+        onChange={(e) => setGoalSteps(e.target.value)}
+      />
+      <input
+        type="number"
+        value={currentSteps}
+        onChange={(e) => setCurrentSteps(e.target.value)}
+      />
+      <button
+        className="saveBtn"
+        onClick={() => onSave(runner.id, goalSteps, currentSteps)}
+      >
+        저장
+      </button>
+    </div>
   );
 }
