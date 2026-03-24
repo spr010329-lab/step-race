@@ -144,18 +144,8 @@ export default function App() {
     if (parsed.length > 0) {
       setRunners(parsed);
     } else {
-      alert("형식이 맞지 않아요. 예: 1,홍길동,500000,231000");
+      alert("입력 형식을 다시 확인해 주세요. 예: 1,홍길동,500000,231000");
     }
-  };
-
-  const updateRunnerField = (id, field, value) => {
-    setRunners((prev) =>
-      prev.map((runner) =>
-        runner.id === id
-          ? { ...runner, [field]: Math.max(0, Number(value) || 0) }
-          : runner
-      )
-    );
   };
 
   return (
@@ -165,7 +155,7 @@ export default function App() {
         body {
           margin: 0;
           font-family: Arial, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-          background: linear-gradient(180deg, #f3eadb 0%, #efe3cf 40%, #e8dcc7 100%);
+          background: linear-gradient(180deg, #f6efe4 0%, #eee1cc 50%, #e5d6bf 100%);
           color: #1f2937;
         }
         .page {
@@ -246,11 +236,6 @@ export default function App() {
         .trackTitle {
           font-size: 18px;
           font-weight: 900;
-        }
-        .trackDesc {
-          font-size: 13px;
-          color: #166534;
-          margin-top: 4px;
         }
         .trackBadge {
           background: rgba(255,255,255,0.8);
@@ -339,7 +324,7 @@ export default function App() {
         }
         .bottomGrid {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: 1fr;
           gap: 16px;
         }
         .innerCard {
@@ -368,24 +353,6 @@ export default function App() {
           font-size: 13px;
           color: #6b7280;
           line-height: 1.7;
-        }
-        .miniList {
-          max-height: 320px;
-          overflow: auto;
-        }
-        .miniRow {
-          display: grid;
-          grid-template-columns: 90px 1fr 130px 130px;
-          gap: 8px;
-          margin-bottom: 8px;
-          align-items: center;
-        }
-        .miniRank, .miniName {
-          background: #f8fafc;
-          border-radius: 14px;
-          padding: 12px;
-          font-size: 14px;
-          font-weight: 800;
         }
         .rankingSearch {
           margin-bottom: 12px;
@@ -480,9 +447,6 @@ export default function App() {
           .stats {
             grid-template-columns: repeat(2, 1fr);
           }
-          .bottomGrid {
-            grid-template-columns: 1fr;
-          }
         }
 
         @media (max-width: 720px) {
@@ -499,9 +463,6 @@ export default function App() {
             grid-template-columns: 1fr;
           }
           .infoGrid {
-            grid-template-columns: 1fr;
-          }
-          .miniRow {
             grid-template-columns: 1fr;
           }
           .lane {
@@ -529,8 +490,8 @@ export default function App() {
           <div className="header">
             <h1 className="title">유일하이스트 시즌8 챌린지</h1>
             <p className="subtitle">
-              총 57명이 참여 중인 챌린지입니다. 현재 걸음 수 기준 순위를 그대로 반영했고,
-              각 참여자의 목표 걸음 수, 현재 걸음 수, 남은 걸음 수, 달성률을 함께 볼 수 있게 구성했습니다.
+              총 57명이 참여 중인 챌린지입니다. 현재 걸음 수 기준 순위를 반영하여,
+              각 참여자의 목표 걸음 수, 현재 걸음 수, 남은 걸음 수 및 달성률을 한눈에 확인하실 수 있도록 구성하였습니다.
             </p>
           </div>
 
@@ -565,9 +526,6 @@ export default function App() {
                   <div className="trackHeader">
                     <div>
                       <div className="trackTitle">실시간 레이스 트랙</div>
-                      <div className="trackDesc">
-                        순위는 네가 준 순위를 그대로 사용하고, 이름표에는 달성률을 표시했어.
-                      </div>
                     </div>
                     <div className="trackBadge">
                       총 남은 걸음 수 {totalRemainingSteps.toLocaleString()}보
@@ -609,43 +567,15 @@ export default function App() {
                   <div className="innerCard">
                     <h3 className="sectionTitle">데이터 붙여넣기</h3>
                     <p className="smallText">
-                      형식은 <strong>순위,이름,목표걸음수,현재걸음수</strong> 이고,
-                      엑셀에서 복사한 탭 형식도 그대로 붙여넣을 수 있어.
+                      아래 입력창에는 <strong>순위, 이름, 목표걸음수, 현재걸음수</strong> 형식으로 입력해 주세요.
+                      엑셀에서 복사한 내용도 그대로 붙여넣으실 수 있습니다.
                     </p>
                     <textarea
                       value={csvInput}
                       onChange={(e) => setCsvInput(e.target.value)}
                     />
                     <div style={{ marginTop: 12 }}>
-                      <button onClick={applyCsv}>데이터 적용</button>
-                    </div>
-                  </div>
-
-                  <div className="innerCard">
-                    <h3 className="sectionTitle">상위 참가자 직접 수정</h3>
-                    <p className="smallText">
-                      목표 걸음 수와 현재 걸음 수를 수정할 수 있어. 순위 번호는 그대로 유지돼.
-                    </p>
-
-                    <div className="miniList">
-                      {sorted.slice(0, 10).map((runner) => (
-                        <div className="miniRow" key={runner.id}>
-                          <div className="miniRank">{runner.rank}위</div>
-                          <div className="miniName">{runner.name}</div>
-                          <input
-                            type="number"
-                            value={runner.goalSteps}
-                            onChange={(e) => updateRunnerField(runner.id, "goalSteps", e.target.value)}
-                            placeholder="목표"
-                          />
-                          <input
-                            type="number"
-                            value={runner.currentSteps}
-                            onChange={(e) => updateRunnerField(runner.id, "currentSteps", e.target.value)}
-                            placeholder="현재"
-                          />
-                        </div>
-                      ))}
+                      <button onClick={applyCsv}>데이터 반영하기</button>
                     </div>
                   </div>
                 </div>
